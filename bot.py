@@ -211,7 +211,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 		self.send_response(200)
 		#self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
-		message = msg[0].encode('utf-8')
+		message = msg[0].decode('utf-8')
 		replies = []
 		replies = generate_replies(message)
 		if len(replies) > 0:
