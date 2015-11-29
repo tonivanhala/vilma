@@ -188,6 +188,7 @@ def compute_entropy(reply):
 
 class RequestHandler(BaseHTTPRequestHandler):
 	def do_POST(self):
+		return 
 		content_len = int(self.headers.get('content-length',0))
 		#post_body = self.rfile.read(content_len).decode('utf-8')
 		#post_body = post_body.lower()
