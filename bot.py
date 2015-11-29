@@ -212,6 +212,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 		self.send_response(200)
 		#self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
+		print("Username: {0}".format(username))
 		if username == u'VILMA':
 			return
 		message = msg[0]
