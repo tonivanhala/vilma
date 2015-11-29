@@ -1,8 +1,16 @@
 # -*- coding: utf-8 -*-
 from py2neo import Graph, Path, Node, Relationship, authenticate, ServiceRoot
 from http.server import BaseHTTPRequestHandler, HTTPServer
+from http.client import HTTPSConnection
+from urllib.parse import parse_qs, urlencode
+import json
 
 import re, os, random, math
+
+TARGET_CHANNEL = u'vilma'
+
+SLACK_INCOMING_WEBHOOK_HOST = u'hooks.slack.com'
+SLACK_INCOMING_WEBHOOK_PATH = u'<Insert path with token here>'
 
 word_pattern = re.compile(r'\s*([a-zA-ZåäöÅÄÖ]+)')
 
@@ -36,6 +44,8 @@ REPLACEMENTS = {
 }
 
 PORT = os.environ.get('PORT', 8000)
+
+
 
 def train(message):
 	words = word_pattern.findall(message)
@@ -179,13 +189,31 @@ def compute_entropy(reply):
 class RequestHandler(BaseHTTPRequestHandler):
 	def do_POST(self):
 		content_len = int(self.headers.get('content-length',0))
-		post_body = self.rfile.read(content_len).decode('utf-8')
-		post_body = post_body.lower()
+		#post_body = self.rfile.read(content_len).decode('utf-8')
+		#post_body = post_body.lower()
+		#content_len = int(self.headers.get('content-length',0))
+		post_body = self.rfile.read(content_len)
+		postvars = parse_qs(post_body.decode('ASCII'))
+		#for key in postvars.keys():
+		#	print(key, postvars[key])
+		token = postvars.get(b'token', None)
+		if token is None:
+			token = postvars.get(u'token', None)
+		msg = postvars.get(b'text', None)
+		if msg is None:
+			msg = postvars.get(u'text', None)
+		username = postvars.get(b'user_name', None)
+		if username is None:
+			username = postvars.get(u'user_name', None)
+		channel_name = postvars.get(b'channel_name', None)
+		if channel_name is None:
+			channel_name = postvars.get(u'channel_name', None)
 		self.send_response(200)
-		self.send_header("Access-Control-Allow-Origin", "*")
+		#self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
+		message = msg[0].decode('utf-8')
 		replies = []
-		replies = generate_replies(post_body)
+		replies = generate_replies(message)
 		if len(replies) > 0:
 			entropies = [(reply, compute_entropy(reply)) for reply in replies]
 			entropies = sorted(entropies, key = lambda x: -x[1])
@@ -201,8 +229,11 @@ class RequestHandler(BaseHTTPRequestHandler):
 					break
 			if selected is None:
 				selected = entropies[0][0]
-			self.wfile.write(u'{{"message": "{0}"}}'.format(selected).encode('utf-8'))
-		train(post_body)
+			payload = { "text" : message, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
+			connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
+			connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
+			response = connection.getresponse()
+		train(message)
 
 handler_class = RequestHandler
 int_port = int(PORT)
