@@ -185,7 +185,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 		self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
 		replies = []
-		#replies = generate_replies(post_body)
+		replies = generate_replies(post_body)
 		if len(replies) > 0:
 			entropies = [(reply, compute_entropy(reply)) for reply in replies]
 			entropies = sorted(entropies, key = lambda x: -x[1])
