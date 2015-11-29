@@ -188,7 +188,7 @@ def compute_entropy(reply):
 
 class RequestHandler(BaseHTTPRequestHandler):
 	def do_POST(self):
-		return 
+		#return 
 		content_len = int(self.headers.get('content-length',0))
 		#post_body = self.rfile.read(content_len).decode('utf-8')
 		#post_body = post_body.lower()
@@ -213,7 +213,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 		#self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
 		print("Username: {0}".format(username))
-		if username == u'VILMA' or username == u'slackbot':
+		if username[0] == u'VILMA' or username[0] == u'slackbot':
 			return
 		message = msg[0]
 		print(u"Message was: {0}".format(message))
