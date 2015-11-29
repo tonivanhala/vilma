@@ -212,6 +212,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 		self.send_response(200)
 		#self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
+		if username == u'VILMA':
+			return
 		message = msg[0]
 		print(u"Message was: {0}".format(message))
 		replies = []
@@ -231,11 +233,11 @@ class RequestHandler(BaseHTTPRequestHandler):
 					break
 			if selected is None:
 				selected = entropies[0][0]
-			payload = { "text" : message, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
+			payload = { "text" : selected, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
 			connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
 			connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
 			response = connection.getresponse()
-		#train(message)
+		train(message)
 
 handler_class = RequestHandler
 int_port = int(PORT)
