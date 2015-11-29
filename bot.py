@@ -211,7 +211,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 		self.send_response(200)
 		#self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
-		message = msg[0].decode('utf-8')
+		message = msg[0]
+		print(u"Message was: {0}".format(message))
 		replies = []
 		replies = generate_replies(message)
 		if len(replies) > 0:
@@ -233,7 +234,6 @@ class RequestHandler(BaseHTTPRequestHandler):
 			connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
 			connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
 			response = connection.getresponse()
-		print(u"Message was: {0}".format(message))
 		train(message)
 
 handler_class = RequestHandler
