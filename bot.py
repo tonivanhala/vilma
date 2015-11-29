@@ -1,5 +1,5 @@
 # -*- coding: utf-8 -*-
-from py2neo import Graph, Path, Node, Relationship, authenticate
+from py2neo import Graph, Path, Node, Relationship, authenticate, ServiceRoot
 from http.server import BaseHTTPRequestHandler, HTTPServer
 
 import re, os, random, math
@@ -181,25 +181,26 @@ class RequestHandler(BaseHTTPRequestHandler):
 		content_len = int(self.headers.get('content-length',0))
 		post_body = self.rfile.read(content_len).decode('utf-8')
 		post_body = post_body.lower()
-		replies = generate_replies(post_body)
-		entropies = [(reply, compute_entropy(reply)) for reply in replies]
-		entropies = sorted(entropies, key = lambda x: -x[1])
-		total_entropy = 0.
-		for (reply, entropy) in entropies:
-			total_entropy += entropy
-		i = random.uniform(0, total_entropy)
-		selected = None
-		for (reply, entropy) in entropies:
-			selected = reply
-			i -= entropy
-			if i <= 0:
-				break
-		if selected is None:
-			selected = entropies[0][0]
 		self.send_response(200)
 		self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
-		self.wfile.write(u'{{"message": "{0}"}}'.format(selected).encode('utf-8'))
+		replies = generate_replies(post_body)
+		if len(replies) > 0:
+			entropies = [(reply, compute_entropy(reply)) for reply in replies]
+			entropies = sorted(entropies, key = lambda x: -x[1])
+			total_entropy = 0.
+			for (reply, entropy) in entropies:
+				total_entropy += entropy
+			i = random.uniform(0, total_entropy)
+			selected = None
+			for (reply, entropy) in entropies:
+				selected = reply
+				i -= entropy
+				if i <= 0:
+					break
+			if selected is None:
+				selected = entropies[0][0]
+			self.wfile.write(u'{{"message": "{0}"}}'.format(selected).encode('utf-8'))
 		train(post_body)
 
 handler_class = RequestHandler
