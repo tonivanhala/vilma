@@ -7,6 +7,8 @@ import json
 
 import re, os, random, math
 
+from Levenshtein import _levenshtein
+
 TARGET_CHANNEL = u'vilma'
 
 SLACK_INCOMING_WEBHOOK_HOST = u'hooks.slack.com'
@@ -40,23 +42,67 @@ REPLACEMENTS = {
 	u"silloin":u"milloin",
 	u"miten":u"siten",
 	u"sinusta":u"minusta",
-	u"minusta":u"sinusta"
+	u"minusta":u"sinusta", 
+	u"et": u"en",
+	u"en": u"et",
+	u"ette" : u"emme",
+	u"emme": u"ette"
 }
 
 PORT = os.environ.get('PORT', 8000)
 
 
+class CypherBuilder:
+	def __init__(self, forward=True):
+		self.word = False
+		self.wordpair = False
+		self.group_by_node = False
+		self.forward = forward
+	def with_word(self, option = True):
+		self.word = option
+		self.wordpair = not option
+		return self
+	def with_wordpair(self, option = True):
+		self.wordpair = option
+		self.word = not option
+		return self
+	def group(self, option = True):
+		self.group_by_node = option
+		return self
+	def build(self):
+		cypher = u"MATCH (a:Wordpair)-[link:Link]->(b:Wordpair)"
+		if self.word:
+			cypher += u" WHERE {0}.{1}={{word}}".format(u'a' if self.forward else u'b', u'first' if self.forward else u'second')
+		elif self.wordpair: 
+			cypher += u" WHERE {0}.wordpair={{pair}}".format(u'a' if self.forward else u'b')
+		else:
+			return None
+		if self.group_by_node:
+			if self.forward and self.word:
+				cypher += u" RETURN a, sum(link.weight) AS weight ORDER BY weight DESC"
+			elif self.forward and self.wordpair:
+				cypher += u" RETURN b, sum(link.weight) AS weight ORDER BY weight DESC"
+			elif self.word:
+				cypher += u" RETURN b, sum(link.weight) AS weight ORDER BY weight DESC"
+			else: 
+				cypher += u" RETURN a, sum(link.weight) AS weight ORDER BY weight DESC"
+		else:
+			cypher += u" RETURN sum(link.weight) AS weight"
+		return cypher
 
-def train(message):
+
+def train_input(message):
 	words = word_pattern.findall(message)
+	if len(words) < 2:
+		return
 	prev = None
 	for i in range(0,len(words)-1):
 		first_word = words[i].lower()
 		second_word = words[i+1].lower()
 		if first_word in REPLACEMENTS.keys():
-			word = REPLACEMENTS[first_word]
+			first_word = REPLACEMENTS[first_word]
 		if second_word in REPLACEMENTS.keys():
-			word = REPLACEMENTS[second_word]	
+			second_word = REPLACEMENTS[second_word]	
 		pair = u"{0}_{1}".format(first_word, second_word)
 		tail_node = graph.merge_one("Wordpair", "wordpair", pair)
 		tail_node.properties['first'] = first_word
@@ -76,85 +122,64 @@ def train(message):
 			result.one.push()
 		prev = (first_word, second_word)
 
-def generate_backward(word):
-	words = []
-	#first, choose a Node to start at
-	cypher_incoming_weights = """MATCH (:Wordpair)-[link:Link]->(a:Wordpair) WHERE a.second={word} RETURN a, sum(link.weight) AS weight ORDER BY weight DESC"""
-	result = graph.cypher.execute(cypher_incoming_weights, {"word": word})
-	cypher_total_weights = """MATCH (:Wordpair)-[link:Link]->(a:Wordpair) WHERE a.second={word} RETURN sum(link.weight) AS weight"""
-	result_total = graph.cypher.execute(cypher_total_weights, {"word": word})
+def pick_start_node(word, forward = True):
+	builder = CypherBuilder(forward)
+	result = graph.cypher.execute(builder.with_word().group().build(), {"word": word})
+	result_total = graph.cypher.execute(builder.with_word().group(False).build(), {"word": word})
 	node = None
 	total = result_total.one
 	if total is not None and total > 0:
 		i = random.randint(1, total)
 		for row in result:
 			i = i - row.weight
-			node = row.a
+			node = row.a if forward else row.b
 			if i <= 0:
 				break
-	if node is None: 
-		cypher_random = """MATCH (a:Wordpair) WITH a, rand() AS number RETURN a ORDER BY number LIMIT 1"""
-		result_random = graph.cypher.execute(cypher_random)
-		node = result_random.one
-	words.append(node['first'])
-	alpha = 1.
-	while random.random() < alpha:
-		pair = u"{0}_{1}".format(node['first'], node['second'])
-		cypher_previous_nodes = """MATCH (b:Wordpair)-[link:Link]->(a:Wordpair) WHERE a.wordpair={pair} RETURN b, link.weight AS weight ORDER BY weight DESC"""
-		result = graph.cypher.execute(cypher_previous_nodes, {"pair": pair})
-		cypher_total_weights = """MATCH (:Wordpair)-[link:Link]->(a:Wordpair) WHERE a.wordpair={pair} RETURN sum(link.weight) AS weight"""
-		total = graph.cypher.execute(cypher_total_weights, {"pair": pair}).one
-		fraction = random.random()
-		if total is not None and total > 0:
-			i = fraction * total
-			for row in result:
-				i = i - row.weight
-				node = row.b
-				if i <= 0:
-					break
-		words[0:0] = [node['first']]
-		alpha -= fraction
-	return words
+	if node is not None:
+		return (0, node)
+	cypher_random = """MATCH (a:Wordpair) WITH a, rand() AS number RETURN a ORDER BY number LIMIT 10"""
+	result_random = graph.cypher.execute(cypher_random)
+	distances = []
+	for row in result_random:
+		d = _levenshtein.distance(row.a.properties['first'], word)
+		distances.append((d, row.a))
+	return sorted(distances, key = lambda x: x[0])[0] 
+
+def recursive_generation(node, alpha, forward = True):
+	if random.random() >= alpha:
+		return [node]
+	pair = u"{0}_{1}".format(node['first'], node['second'])
+	builder = CypherBuilder(forward)
+	linked_nodes = graph.cypher.execute(builder.with_wordpair().group().build(), {"pair": pair})
+	total_weight = graph.cypher.execute(builder.with_wordpair().group(False).build(), {"pair": pair}).one
+	if total_weight is None or total_weight < 1:
+		return [node]
+	fraction = random.random()
+	i = fraction * total_weight
+	for row in linked_nodes:
+		i = i - row.weight
+		new_node = row.b if forward else row.a 
+		if i <= 0:
+			break
+	nodes = recursive_generation(new_node, alpha - fraction, forward)
+	if forward:
+		return [node] + nodes
+	return nodes + [node]
+
+def generate_backward(word):
+	distance, node = pick_start_node(word, False)
+	return (distance, recursive_generation(node, 1., forward = False))
 
 def generate_forward(word):
+	distance, node = pick_start_node(word, True)
+	return (distance, recursive_generation(node, 1., forward = True))
+
+def unwrap_sentence(nodes):
 	words = []
-	#first, choose a Node to start at
-	cypher_outgoing_weights = """MATCH (a:Wordpair)-[link:Link]->(:Wordpair) WHERE a.first={word} RETURN a, sum(link.weight) AS weight ORDER BY weight DESC"""
-	result = graph.cypher.execute(cypher_outgoing_weights, {"word": word})
-	cypher_total_weights = """MATCH (a:Wordpair)-[link:Link]->(:Wordpair) WHERE a.first={word} RETURN sum(link.weight) AS weight"""
-	result_total = graph.cypher.execute(cypher_total_weights, {"word": word})
-	node = None
-	total = result_total.one
-	if total is not None and total > 0:
-		i = random.randint(1, total)
-		for row in result:
-			i = i - row.weight
-			node = row.a
-			if i <= 0:
-				break
-	if node is None: 
-		cypher_random = """MATCH (a:Wordpair) WITH a, rand() AS number RETURN a ORDER BY number LIMIT 1"""
-		result_random = graph.cypher.execute(cypher_random)
-		node = result_random.one
-	words.append(node['second'])
-	alpha = 1.
-	while random.random() < alpha:
-		pair = u"{0}_{1}".format(node['first'], node['second'])
-		cypher_previous_nodes = """MATCH (a:Wordpair)-[link:Link]->(b:Wordpair) WHERE a.wordpair={pair} RETURN b, link.weight AS weight ORDER BY weight DESC"""
-		result = graph.cypher.execute(cypher_previous_nodes, {"pair": pair})
-		cypher_total_weights = """MATCH (a:Wordpair)-[link:Link]->(:Wordpair) WHERE a.wordpair={pair} RETURN sum(link.weight) AS weight"""
-		total = graph.cypher.execute(cypher_total_weights, {"pair": pair}).one
-		fraction = random.random()
-		if total is not None and total > 0:
-			i = fraction * total
-			for row in result:
-				i = i - row.weight
-				node = row.b
-				if i <= 0:
-					break
-		words.append(node['second'])
-		alpha -= fraction
-	return words
+	for node in nodes:
+		words.append( node['first'] )
+	words.append( node['second'] )
+	return u" ".join(words)
 
 def generate_replies(message):
 	words = word_pattern.findall(message)
@@ -164,11 +189,9 @@ def generate_replies(message):
 	for word in words:
 		if word in STOP_WORDS:
 			continue
-		if word in REPLACEMENTS.keys():
-			word = REPLACEMENTS[word]
-		begin = generate_backward(word)
-		end = generate_forward(word)
-		replies.append(u"{0} {1} {2}".format(u" ".join(begin), word, u" ".join(end)))
+		distance_1, begin = generate_backward(word)
+		distance_2, end = generate_forward(word)
+		replies.append( (distance_1 + distance_2, unwrap_sentence(begin + end) ) )
 	return replies
 
 def compute_entropy(reply):
@@ -186,41 +209,31 @@ def compute_entropy(reply):
 			entropy += math.log(inverse)
 	return entropy
 
+def extract_postvars(postvars, *args):
+	vals = []
+	for x in args:
+		val = postvars.get(x, None)
+		if val is None:
+			val = postvars.get(x.decode('utf-8'), None)
+		vals.append(val)
+	return vals
+
 class RequestHandler(BaseHTTPRequestHandler):
-	def do_POST(self):
-		#return 
+	def do_POST(self): 
 		content_len = int(self.headers.get('content-length',0))
-		#post_body = self.rfile.read(content_len).decode('utf-8')
-		#post_body = post_body.lower()
-		#content_len = int(self.headers.get('content-length',0))
 		post_body = self.rfile.read(content_len)
 		postvars = parse_qs(post_body.decode('ASCII'))
-		#for key in postvars.keys():
-		#	print(key, postvars[key])
-		token = postvars.get(b'token', None)
-		if token is None:
-			token = postvars.get(u'token', None)
-		msg = postvars.get(b'text', None)
-		if msg is None:
-			msg = postvars.get(u'text', None)
-		username = postvars.get(b'user_name', None)
-		if username is None:
-			username = postvars.get(u'user_name', None)
-		channel_name = postvars.get(b'channel_name', None)
-		if channel_name is None:
-			channel_name = postvars.get(u'channel_name', None)
+		print(postvars)
+		(token, msg, username, channel_name, train) = extract_postvars(postvars, b'token', b'text', b'user_name', b'channel_name', b'train')
 		self.send_response(200)
-		#self.send_header("Access-Control-Allow-Origin", "*")
 		self.end_headers()
-		print("Username: {0}".format(username))
-		if username[0] == u'VILMA' or username[0] == u'slackbot':
+		if username is not None and (username[0] == u'VILMA' or username[0] == u'slackbot'):
 			return
 		message = msg[0]
-		print(u"Message was: {0}".format(message))
 		replies = []
 		replies = generate_replies(message)
 		if len(replies) > 0:
-			entropies = [(reply, compute_entropy(reply)) for reply in replies]
+			entropies = [(reply, compute_entropy(reply) / (distance + 1) ) for distance, reply in replies]
 			entropies = sorted(entropies, key = lambda x: -x[1])
 			total_entropy = 0.
 			for (reply, entropy) in entropies:
@@ -234,11 +247,16 @@ class RequestHandler(BaseHTTPRequestHandler):
 					break
 			if selected is None:
 				selected = entropies[0][0]
-			payload = { "text" : selected, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
-			connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
-			connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
-			response = connection.getresponse()
-		#train(message)
+			if train is None:
+				payload = { "text" : selected, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
+				connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
+				connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
+				response = connection.getresponse()
+			else:
+				#self.send_header("Access-Control-Allow-Origin", "*")
+				#self.end_headers()
+				self.wfile.write(u'{{"message": "{0}"}}'.format(selected).encode('utf-8'))
+		train_input(message)
 
 handler_class = RequestHandler
 int_port = int(PORT)
