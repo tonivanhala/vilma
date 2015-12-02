@@ -189,6 +189,8 @@ def generate_replies(message):
 	for word in words:
 		if word in STOP_WORDS:
 			continue
+		if word in REPLACEMENTS.keys():
+			word = REPLACEMENTS[word]
 		distance_1, begin = generate_backward(word)
 		distance_2, end = generate_forward(word)
 		replies.append( (distance_1 + distance_2, unwrap_sentence(begin + end) ) )
