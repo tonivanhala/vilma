@@ -9,6 +9,9 @@ import re, os, random, math
 
 from Levenshtein import _levenshtein
 
+PORT = os.environ.get('PORT', 8000)
+NEO4J_URL = os.environ.get('NEO4J_URL', 'http://localhost:7474/db/data/')
+
 TARGET_CHANNEL = u'vilma'
 
 SLACK_INCOMING_WEBHOOK_HOST = u'hooks.slack.com'
@@ -19,8 +22,11 @@ word_pattern = re.compile(r'\s*([a-zA-ZåäöÅÄÖ]+)')
 #authenticate("localhost:7474", "neo4j", "password")
 #graph = Graph("http://localhost:7474/db/data/")
 
-graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
-graph = ServiceRoot(graphenedb_url).graph
+#authenticate("localhost:7474", "neo4j", "password")
+graph = Graph(NEO4J_URL)
+
+#graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
+#graph = ServiceRoot(graphenedb_url).graph
 
 STOP_WORDS = [u"on", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä"]
 REPLACEMENTS = {
@@ -48,8 +54,6 @@ REPLACEMENTS = {
 	u"ette" : u"emme",
 	u"emme": u"ette"
 }
-
-PORT = os.environ.get('PORT', 8000)
 
 
 class CypherBuilder:
@@ -225,7 +229,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 		content_len = int(self.headers.get('content-length',0))
 		post_body = self.rfile.read(content_len)
 		postvars = parse_qs(post_body.decode('ASCII'))
-		print(postvars)
+		#print(postvars)
 		(token, msg, username, channel_name, train) = extract_postvars(postvars, b'token', b'text', b'user_name', b'channel_name', b'train')
 		self.send_response(200)
 		self.end_headers()
