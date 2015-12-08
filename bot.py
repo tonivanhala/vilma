@@ -42,6 +42,8 @@ REPLACEMENTS = {
 	u"oot":u"oon",
 	u"olet":u"olen",
 	u"olen":u"olet",
+	u"olemme":u"olette",
+	u"olette":u"olemme",
 	u"mä":u"sä",
 	u"sä":u"mä",
 	u"mää":u"sää",
