@@ -237,7 +237,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 			return
 		message = msg[0]
 		replies = []
-		replies = generate_replies(message)
+		if train is None:
+			replies = generate_replies(message)
 		if len(replies) > 0:
 			entropies = [(reply, compute_entropy(reply) / (distance + 1) ) for distance, reply in replies]
 			entropies = sorted(entropies, key = lambda x: -x[1])
