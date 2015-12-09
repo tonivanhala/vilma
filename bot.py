@@ -17,7 +17,7 @@ TARGET_CHANNEL = u'vilma'
 SLACK_INCOMING_WEBHOOK_HOST = u'hooks.slack.com'
 SLACK_INCOMING_WEBHOOK_PATH = u'<Insert path with token here>'
 
-word_pattern = re.compile(r'\s*([a-zA-ZåäöÅÄÖ]+)')
+word_pattern = re.compile(r'\s*([a-zA-Z0-9åäöÅÄÖ]+)')
 
 #authenticate("localhost:7474", "neo4j", "password")
 #graph = Graph("http://localhost:7474/db/data/")
