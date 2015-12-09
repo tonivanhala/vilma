@@ -28,7 +28,7 @@ graph = Graph(NEO4J_URL)
 #graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
 #graph = ServiceRoot(graphenedb_url).graph
 
-STOP_WORDS = [u"on", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä"]
+STOP_WORDS = [u"vilma", u"vilman", u"vilmalle", u"vilmasta", u"vilmaa", u"vilmaan", u"on", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä"]
 REPLACEMENTS = {
 	u"sinä":u"minä",
 	u"sinun":u"minun",
@@ -58,7 +58,12 @@ REPLACEMENTS = {
 	u"et": u"en",
 	u"en": u"et",
 	u"ette" : u"emme",
-	u"emme": u"ette"
+	u"emme": u"ette",
+	u"mikä":u"se",
+	u"kuka":u"hän",
+	u"kenen":u"hänen",
+	u"kenestä":u"hänestä",
+	u"minne":u"sinne"
 }
 
 
