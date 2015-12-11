@@ -31,7 +31,7 @@ graph = Graph(NEO4J_URL)
 #graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
 #graph = ServiceRoot(graphenedb_url).graph
 
-STOP_WORDS = [u"vilma", u"vilman", u"vilmalle", u"vilmasta", u"vilmaa", u"vilmaan", u"on", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä"]
+STOP_WORDS = [u"vilma", u"vilman", u"vilmalle", u"vilmasta", u"vilmaa", u"vilmaan", u"on", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä", u"ja"]
 REPLACEMENTS = {
 	u"sinä":u"minä",
 	u"sinun":u"minun",
@@ -242,6 +242,8 @@ def generate_replies(message):
 			continue
 		distance_1, begin = generate_backward(first_word, second_word)
 		distance_2, end = generate_forward(first_word, second_word)
+		if len(begin) > 0 and len(end) > 0 and begin[-1] == end[0]:
+			begin = begin[0:-1]
 		replies.append( (distance_1 + distance_2, u" ".join(begin + end) ) )
 	return replies
 
@@ -308,13 +310,14 @@ class RequestHandler(BaseHTTPRequestHandler):
 				all_replies.append(selected)
 		if len(all_replies) < 1:
 			all_replies = [ generate_random_reply() ]
-		reply = u"\\n".join(all_replies)
 		if not train:
-			payload = { "text" : reply, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
-			connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
-			connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
-			response = connection.getresponse()
+			for reply in all_replies:
+				payload = { "text" : reply, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
+				connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
+				connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
+				response = connection.getresponse()
 		else:
+			reply = u"\\n".join(all_replies)
 			self.wfile.write(u'{{"message": "{0}"}}'.format(reply).encode('utf-8'))
 		for sentence in sentence_pattern.split(message):
 			train_input(sentence)
