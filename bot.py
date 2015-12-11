@@ -251,6 +251,8 @@ def generate_random_reply():
 	result = graph.cypher.execute("MATCH (a:Wordpair) WITH a, rand() AS number RETURN a ORDER BY number LIMIT 1")
 	begin = recursive_generation(result.one, 1., forward = False)
 	end = recursive_generation(result.one, 1., forward = True)
+	if len(begin) > 0 and len(end) > 0 and begin[-1] == end[0]:
+		begin = begin[0:-1]
 	return u" ".join(begin + end)
 
 def compute_entropy(reply):
