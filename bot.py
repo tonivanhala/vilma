@@ -19,6 +19,8 @@ SLACK_INCOMING_WEBHOOK_PATH = u'<Insert path with token here>'
 
 #Regex pattern to match either words or slack tags like ":simple_smile:" or ":cthulhu:"
 word_pattern = re.compile(r'\s*(:[a-zA-Z0-9åäöÅÄÖ_]+:)|([a-zA-Z0-9åäöÅÄÖ]+)')
+#Regex pattern to split sentences 
+sentence_pattern = re.compile(r'[\.]+|[\n]+')
 
 #authenticate("localhost:7474", "neo4j", "password")
 #graph = Graph("http://localhost:7474/db/data/")
@@ -128,6 +130,13 @@ def train_input(message):
 		tail_node = graph.merge_one("Wordpair", "wordpair", pair)
 		tail_node.properties['first'] = first_word
 		tail_node.properties['second'] = second_word
+		f = tail_node.properties.get('freq_total', 0)
+		if f == 0:
+			tail_node.properties['freq_last_word'] = 0
+		tail_node.properties['freq_total'] = f + 1
+		if i == len(words) - 2:
+			#end of sentence 
+			tail_node.properties['freq_last_word'] += 1
 		tail_node.push()
 		if prev is not None:
 			(prev_first, prev_second) = prev
@@ -143,38 +152,53 @@ def train_input(message):
 			result.one.push()
 		prev = (first_word, second_word)
 
-def pick_start_node(word, forward = True):
+def pick_start_node(first_word, second_word, forward = True):
 	builder = CypherBuilder(forward)
-	result = graph.cypher.execute(builder.with_word().group().build(), {"word": word})
-	result_total = graph.cypher.execute(builder.with_word().group(False).build(), {"word": word})
 	node = None
-	total = result_total.one
-	if total is not None and total > 0:
-		i = random.randint(1, total)
-		for row in result:
-			i = i - row.weight
-			node = row.a if forward else row.b
-			if i <= 0:
-				break
+	#First, try to find a matching wordpair: 
+	wordpair = u"{0}_{1}".format(first_word, second_word)
+	result = graph.cypher.execute(u"MATCH (a:Wordpair) WHERE a.wordpair={pair} RETURN a", {"pair": wordpair})
+	total = result.one
+	if total is not None:
+		node = total
+	if node is None:
+		#No match? Try to match reversed pair
+		wordpair = u"{0}_{1}".format(second_word, first_word)
+		result = graph.cypher.execute(u"MATCH (a:Wordpair) WHERE a.wordpair={pair} RETURN a", {"pair": wordpair})
+		total = result.one
+		if total is not None:
+			node = total
+	if node is None:
+		#Still no match? Match single word 
+		result = graph.cypher.execute(builder.with_word().group().build(), {"word": first_word})
+		result_total = graph.cypher.execute(builder.with_word().group(False).build(), {"word": first_word})
+		total = result_total.one
+		if total is not None and total > 0:
+			i = random.randint(1, total)
+			for row in result:
+				i = i - row.weight
+				node = row.a if forward else row.b
+				if i <= 0:
+					break
 	if node is not None:
 		return (0, node)
 	cypher_random = """MATCH (a:Wordpair) WITH a, rand() AS number RETURN a ORDER BY number LIMIT 10"""
 	result_random = graph.cypher.execute(cypher_random)
 	distances = []
 	for row in result_random:
-		d = _levenshtein.distance(row.a.properties['first'], word)
+		d = _levenshtein.distance(row.a.properties['first'], first_word)
 		distances.append((d, row.a))
 	return sorted(distances, key = lambda x: x[0])[0] 
 
 def recursive_generation(node, alpha, forward = True):
 	if random.random() >= alpha:
-		return [node]
+		return [node['first'], node['second']] if forward else [node['first']]
 	pair = u"{0}_{1}".format(node['first'], node['second'])
 	builder = CypherBuilder(forward)
 	linked_nodes = graph.cypher.execute(builder.with_wordpair().group().build(), {"pair": pair})
 	total_weight = graph.cypher.execute(builder.with_wordpair().group(False).build(), {"pair": pair}).one
 	if total_weight is None or total_weight < 1:
-		return [node]
+		return [node['first']]
 	fraction = random.random()
 	i = fraction * total_weight
 	for row in linked_nodes:
@@ -182,25 +206,24 @@ def recursive_generation(node, alpha, forward = True):
 		new_node = row.b if forward else row.a 
 		if i <= 0:
 			break
-	nodes = recursive_generation(new_node, alpha - fraction, forward)
+	stop_weight = 1.
+	#Weight the reduction in alpha (stop criteria) based on how often new node is the last word in a sentence
+	freq_total = new_node.properties.get('freq_total', 0)
+	freq_last_word = new_node.properties.get('freq_last_word', 0)
+	if freq_total > 0:
+		stop_weight = freq_last_word / freq_total
+	nodes = recursive_generation(new_node, alpha - fraction * stop_weight, forward)
 	if forward:
-		return [node] + nodes
-	return nodes + [node]
+		return [node['first']] + nodes
+	return nodes + [node['first']]
 
-def generate_backward(word):
-	distance, node = pick_start_node(word, False)
+def generate_backward(first_word, second_word):
+	distance, node = pick_start_node(first_word, second_word, False)
 	return (distance, recursive_generation(node, 1., forward = False))
 
-def generate_forward(word):
-	distance, node = pick_start_node(word, True)
+def generate_forward(first_word, second_word):
+	distance, node = pick_start_node(first_word, second_word, True)
 	return (distance, recursive_generation(node, 1., forward = True))
-
-def unwrap_sentence(nodes):
-	words = []
-	for node in nodes:
-		words.append( node['first'] )
-	words.append( node['second'] )
-	return u" ".join(words)
 
 def generate_replies(message):
 	words = word_pattern.findall(message)
@@ -208,18 +231,25 @@ def generate_replies(message):
 	words = [(x[0] if x[0] is not None and len(x[0]) > 0 else x[1]) for x in words]
 	prev = None
 	replies = []
-	#TODO: build response for each word-pair of the message
-	if len(replies) < 1:
-		#build response for each word of the message
-		for word in words:
-			if word in STOP_WORDS:
-				continue
-			if word in REPLACEMENTS.keys():
-				word = REPLACEMENTS[word]
-			distance_1, begin = generate_backward(word)
-			distance_2, end = generate_forward(word)
-			replies.append( (distance_1 + distance_2, unwrap_sentence(begin + end) ) )
+	for i in range(0,len(words)-1):
+		first_word = words[i].lower()
+		second_word = words[i+1].lower()
+		if first_word in REPLACEMENTS.keys():
+			first_word = REPLACEMENTS[first_word]
+		if second_word in REPLACEMENTS.keys():
+			second_word = REPLACEMENTS[second_word]	
+		if first_word in STOP_WORDS or second_word in STOP_WORDS:
+			continue
+		distance_1, begin = generate_backward(first_word, second_word)
+		distance_2, end = generate_forward(first_word, second_word)
+		replies.append( (distance_1 + distance_2, u" ".join(begin + end) ) )
 	return replies
+
+def generate_random_reply():
+	result = graph.cypher.execute("MATCH (a:Wordpair) WITH a, rand() AS number RETURN a ORDER BY number LIMIT 1")
+	begin = recursive_generation(result.one, 1., forward = False)
+	end = recursive_generation(result.one, 1., forward = True)
+	return u" ".join(begin + end)
 
 def compute_entropy(reply):
 	entropy = 0.
@@ -250,41 +280,44 @@ class RequestHandler(BaseHTTPRequestHandler):
 		content_len = int(self.headers.get('content-length',0))
 		post_body = self.rfile.read(content_len)
 		postvars = parse_qs(post_body.decode('ASCII'))
-		#print(postvars)
 		(token, msg, username, channel_name, train) = extract_postvars(postvars, b'token', b'text', b'user_name', b'channel_name', b'train')
 		self.send_response(200)
 		self.end_headers()
 		if username is not None and (username[0] == u'VILMA' or username[0] == u'slackbot'):
 			return
 		message = msg[0]
-		replies = []
-		replies = generate_replies(message)
-		if len(replies) > 0:
-			entropies = [(reply, compute_entropy(reply) / (distance + 1) ) for distance, reply in replies]
-			entropies = sorted(entropies, key = lambda x: -x[1])
-			total_entropy = 0.
-			for (reply, entropy) in entropies:
-				total_entropy += entropy
-			i = random.uniform(0, total_entropy)
-			selected = None
-			for (reply, entropy) in entropies:
-				selected = reply
-				i -= entropy
-				if i <= 0:
-					break
-			if selected is None:
-				selected = entropies[0][0]
-			if train is None:
-				payload = { "text" : selected, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
-				connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
-				connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
-				response = connection.getresponse()
-			else:
-				#self.send_header("Access-Control-Allow-Origin", "*")
-				#self.end_headers()
-				self.wfile.write(u'{{"message": "{0}"}}'.format(selected).encode('utf-8'))
-		train_input(message)
-
+		all_replies = [] 
+		for sentence in sentence_pattern.split(message):
+			replies = []
+			replies = generate_replies(message)
+			if len(replies) > 0:
+				entropies = [(reply, compute_entropy(reply) / (distance + 1) ) for distance, reply in replies]
+				entropies = sorted(entropies, key = lambda x: -x[1])
+				total_entropy = 0.
+				for (reply, entropy) in entropies:
+					total_entropy += entropy
+				i = random.uniform(0, total_entropy)
+				selected = None
+				for (reply, entropy) in entropies:
+					selected = reply
+					i -= entropy
+					if i <= 0:
+						break
+				if selected is None:
+					selected = entropies[0][0]
+				all_replies.append(selected)
+		if len(all_replies) < 1:
+			all_replies = [ generate_random_reply() ]
+		reply = u"\\n".join(all_replies)
+		if not train:
+			payload = { "text" : reply, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
+			connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
+			connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
+			response = connection.getresponse()
+		else:
+			self.wfile.write(u'{{"message": "{0}"}}'.format(reply).encode('utf-8'))
+		for sentence in sentence_pattern.split(message):
+			train_input(sentence)
 handler_class = RequestHandler
 int_port = int(PORT)
 server_address = ('', int_port)
