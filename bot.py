@@ -204,6 +204,8 @@ def unwrap_sentence(nodes):
 
 def generate_replies(message):
 	words = word_pattern.findall(message)
+	# Flatten the returned tuple (slack_tag, regular_word) into a list 
+	words = [(x[0] if x[0] is not None and len(x[0]) > 0 else x[1]) for x in words]
 	prev = None
 	replies = []
 	#TODO: build response for each word-pair of the message
