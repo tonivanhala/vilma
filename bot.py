@@ -17,7 +17,8 @@ TARGET_CHANNEL = u'vilma'
 SLACK_INCOMING_WEBHOOK_HOST = u'hooks.slack.com'
 SLACK_INCOMING_WEBHOOK_PATH = u'<Insert path with token here>'
 
-word_pattern = re.compile(r'\s*([a-zA-Z0-9åäöÅÄÖ]+)')
+#Regex pattern to match either words or slack tags like ":simple_smile:" or ":cthulhu:"
+word_pattern = re.compile(r'\s*(:[a-zA-Z0-9åäöÅÄÖ_]+:)|([a-zA-Z0-9åäöÅÄÖ]+)')
 
 #authenticate("localhost:7474", "neo4j", "password")
 #graph = Graph("http://localhost:7474/db/data/")
@@ -63,7 +64,10 @@ REPLACEMENTS = {
 	u"kuka":u"hän",
 	u"kenen":u"hänen",
 	u"kenestä":u"hänestä",
-	u"minne":u"sinne"
+	u"minne":u"sinne",
+	u"missä":u"siellä",
+	u"ootte":u"oomme",
+	u"oomme":u"ootte",
 }
 
 
@@ -108,6 +112,8 @@ class CypherBuilder:
 
 def train_input(message):
 	words = word_pattern.findall(message)
+	# Flatten the returned tuple (slack_tag, regular_word) into a list 
+	words = [(x[0] if x[0] is not None and len(x[0]) > 0 else x[1]) for x in words]
 	if len(words) < 2:
 		return
 	prev = None
@@ -200,15 +206,17 @@ def generate_replies(message):
 	words = word_pattern.findall(message)
 	prev = None
 	replies = []
-	#build response for each word of the message
-	for word in words:
-		if word in STOP_WORDS:
-			continue
-		if word in REPLACEMENTS.keys():
-			word = REPLACEMENTS[word]
-		distance_1, begin = generate_backward(word)
-		distance_2, end = generate_forward(word)
-		replies.append( (distance_1 + distance_2, unwrap_sentence(begin + end) ) )
+	#TODO: build response for each word-pair of the message
+	if len(replies) < 1:
+		#build response for each word of the message
+		for word in words:
+			if word in STOP_WORDS:
+				continue
+			if word in REPLACEMENTS.keys():
+				word = REPLACEMENTS[word]
+			distance_1, begin = generate_backward(word)
+			distance_2, end = generate_forward(word)
+			replies.append( (distance_1 + distance_2, unwrap_sentence(begin + end) ) )
 	return replies
 
 def compute_entropy(reply):
