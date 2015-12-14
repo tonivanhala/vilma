@@ -20,7 +20,7 @@ SLACK_INCOMING_WEBHOOK_PATH = u'<Insert path with token here>'
 #Regex pattern to match either words or slack tags like ":simple_smile:" or ":cthulhu:"
 word_pattern = re.compile(r'\s*(:[a-zA-Z0-9åäöÅÄÖ_]+:)|([a-zA-Z0-9åäöÅÄÖ]+)')
 #Regex pattern to split sentences 
-sentence_pattern = re.compile(r'[\.]+|[\n]+')
+sentence_pattern = re.compile(r'[\.!?]+')
 
 #authenticate("localhost:7474", "neo4j", "password")
 #graph = Graph("http://localhost:7474/db/data/")
@@ -31,7 +31,7 @@ graph = Graph(NEO4J_URL)
 #graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
 #graph = ServiceRoot(graphenedb_url).graph
 
-STOP_WORDS = [u"vilma", u"vilman", u"vilmalle", u"vilmasta", u"vilmaa", u"vilmaan", u"on", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä", u"ja"]
+STOP_WORDS = [u"vilma", u"vilman", u"vilmalle", u"vilmasta", u"vilmaa", u"vilmaan", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä", u"ja"]
 REPLACEMENTS = {
 	u"sinä":u"minä",
 	u"sinun":u"minun",
@@ -231,9 +231,13 @@ def generate_replies(message):
 	words = [(x[0] if x[0] is not None and len(x[0]) > 0 else x[1]) for x in words]
 	prev = None
 	replies = []
+	processed_pairs = []
 	for i in range(0,len(words)-1):
 		first_word = words[i].lower()
 		second_word = words[i+1].lower()
+		if (first_word, second_word) in processed_pairs:
+			continue
+		processed_pairs.append( (first_word, second_word) )
 		if first_word in REPLACEMENTS.keys():
 			first_word = REPLACEMENTS[first_word]
 		if second_word in REPLACEMENTS.keys():
@@ -292,9 +296,9 @@ class RequestHandler(BaseHTTPRequestHandler):
 		message = msg[0]
 		all_replies = [] 
 		for sentence in sentence_pattern.split(message):
+			if len(sentence) < 1:
+				continue
 			replies = []
-			if not train: #DEBUG
-				replies = generate_replies(message)
 			if len(replies) > 0:
 				entropies = [(reply, compute_entropy(reply) / (distance + 1) ) for distance, reply in replies]
 				entropies = sorted(entropies, key = lambda x: -x[1])
