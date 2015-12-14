@@ -25,7 +25,7 @@ sentence_pattern = re.compile(r'[\.!?]+')
 #authenticate("localhost:7474", "neo4j", "password")
 #graph = Graph("http://localhost:7474/db/data/")
 
-authenticate("localhost:7474", "neo4j", "password")
+#authenticate("localhost:7474", "neo4j", "password")
 graph = Graph(NEO4J_URL)
 
 #graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
@@ -299,6 +299,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 			if len(sentence) < 1:
 				continue
 			replies = []
+			selected = None
 			replies = generate_replies(message)
 			if len(replies) > 0:
 				entropies = [(reply, compute_entropy(reply) / (distance + 1) ) for distance, reply in replies]
@@ -315,18 +316,16 @@ class RequestHandler(BaseHTTPRequestHandler):
 						break
 				if selected is None:
 					selected = entropies[0][0]
-				all_replies.append(selected)
-		if len(all_replies) < 1:
-			all_replies = [ generate_random_reply() ]
-		if not train:
-			for reply in all_replies:
-				payload = { "text" : reply, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
+			if selected is None:
+				selected = generate_random_reply()
+			all_replies.append(selected)
+			if not train:
+				payload = { "text" : selected, "username": u"VILMA", "channel": u"#{0}".format(TARGET_CHANNEL), "icon_url": u"https://i1.wp.com/www.vincit.fi/wordpress/wp-content/uploads/2015/04/roboduck05.png" }
 				connection = HTTPSConnection(SLACK_INCOMING_WEBHOOK_HOST)
 				connection.request("POST", SLACK_INCOMING_WEBHOOK_PATH, json.dumps(payload))
 				response = connection.getresponse()
-		else:
-			reply = u"\\n".join(all_replies)
-			self.wfile.write(u'{{"message": "{0}"}}'.format(reply).encode('utf-8'))
+			else:
+				self.wfile.write(u'{{"message": "{0}"}}'.format(selected).encode('utf-8'))
 		for sentence in sentence_pattern.split(message):
 			train_input(sentence)
 handler_class = RequestHandler
