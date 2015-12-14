@@ -25,7 +25,7 @@ sentence_pattern = re.compile(r'[\.!?]+')
 #authenticate("localhost:7474", "neo4j", "password")
 #graph = Graph("http://localhost:7474/db/data/")
 
-#authenticate("localhost:7474", "neo4j", "password")
+authenticate("localhost:7474", "neo4j", "password")
 graph = Graph(NEO4J_URL)
 
 #graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
@@ -299,6 +299,7 @@ class RequestHandler(BaseHTTPRequestHandler):
 			if len(sentence) < 1:
 				continue
 			replies = []
+			replies = generate_replies(message)
 			if len(replies) > 0:
 				entropies = [(reply, compute_entropy(reply) / (distance + 1) ) for distance, reply in replies]
 				entropies = sorted(entropies, key = lambda x: -x[1])
