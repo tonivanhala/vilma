@@ -212,7 +212,7 @@ def recursive_generation(node, alpha, forward = True):
 	freq_last_word = new_node.properties.get('freq_last_word', 0)
 	if freq_total > 0:
 		stop_weight = freq_last_word / freq_total
-	nodes = recursive_generation(new_node, alpha - fraction * stop_weight, forward)
+	nodes = recursive_generation(new_node, alpha - math.sqrt(fraction * stop_weight), forward)
 	if forward:
 		return [node['first']] + nodes
 	return nodes + [node['first']]
