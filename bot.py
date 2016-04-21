@@ -31,7 +31,7 @@ graph = Graph(NEO4J_URL)
 #graphenedb_url = os.environ.get("GRAPHENEDB_URL", "http://localhost:7474/")
 #graph = ServiceRoot(graphenedb_url).graph
 
-STOP_WORDS = [u"vilma", u"vilman", u"vilmalle", u"vilmasta", u"vilmaa", u"vilmaan", u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä", u"ja"]
+STOP_WORDS = [u"ei", u"kyllä", u"olla", u"jonka", u"että", u"jotta", u"koska", u"kuinka", u"jos", u"vaikka", u"kuin", u"kunnes", u"mutta", u"no", u"ehkä", u"ja"]
 REPLACEMENTS = {
 	u"sinä":u"minä",
 	u"sinun":u"minun",
@@ -70,6 +70,14 @@ REPLACEMENTS = {
 	u"missä":u"siellä",
 	u"ootte":u"oomme",
 	u"oomme":u"ootte",
+	u"elixir":u"java",
+	u":elixir:":u":java:",
+	u"vilma":u"minä", 
+	u"vilman":u"minun", 
+	u"vilmalle":u"minulle", 
+	u"vilmasta":u"minusta", 
+	u"vilmaa":u"minua", 
+	u"vilmaan":u"minuun",
 }
 
 
@@ -188,9 +196,13 @@ def pick_start_node(first_word, second_word, forward = True):
 	for row in result_random:
 		d = _levenshtein.distance(row.a.properties['first'], first_word)
 		distances.append((d, row.a))
+	if len(distances) < 1:
+		return (0, None)
 	return sorted(distances, key = lambda x: x[0])[0] 
 
 def recursive_generation(node, alpha, forward = True):
+	if node is None:
+		return []
 	if random.random() >= alpha:
 		return [node['first'], node['second']] if forward else [node['first']]
 	pair = u"{0}_{1}".format(node['first'], node['second'])
@@ -226,6 +238,7 @@ def generate_forward(first_word, second_word):
 	return (distance, recursive_generation(node, 1., forward = True))
 
 def generate_replies(message):
+	# TODO: compute entropy during this generation in order to avoid second pass (it's getting slow)
 	words = word_pattern.findall(message)
 	# Flatten the returned tuple (slack_tag, regular_word) into a list 
 	words = [(x[0] if x[0] is not None and len(x[0]) > 0 else x[1]) for x in words]
