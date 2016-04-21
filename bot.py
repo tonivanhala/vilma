@@ -340,6 +340,8 @@ class RequestHandler(BaseHTTPRequestHandler):
 			else:
 				self.wfile.write(u'{{"message": "{0}"}}'.format(selected).encode('utf-8'))
 				break
+			if len(all_replies) > 3:
+				break
 		for sentence in sentence_pattern.split(message):
 			train_input(sentence)
 handler_class = RequestHandler
